@@ -1,0 +1,7 @@
+vk-api
+requests
+pandas
+numpy
+matplotlib
+scikit-learn
+python-dotenv
