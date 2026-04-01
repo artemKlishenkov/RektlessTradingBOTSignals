@@ -11,6 +11,8 @@ import threading
 import json
 from datetime import datetime
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import requests
 import sys
@@ -23,7 +25,13 @@ GROUP_TOKEN = os.getenv("GROUP_TOKEN")
 USER_TOKEN = os.getenv("USER_TOKEN")
 GROUP_ID = os.getenv("GROUP_ID")
 CHANNEL_ID = os.getenv("CHANNEL_ID")
-DATABASE_PATH = os.getenv("DATABASE_PATH", "trading_bot.db")
+
+# Создаем папку для данных
+DATA_DIR = os.getenv("DATA_DIR", "/app/data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# Путь к базе данных
+DATABASE_PATH = os.getenv("DATABASE_PATH", os.path.join(DATA_DIR, "trading_bot.db"))
 
 # Если переменных нет, пробуем config.json
 if not GROUP_TOKEN:
@@ -47,6 +55,8 @@ GROUP_ID = int(GROUP_ID) if GROUP_ID else None
 CHANNEL_ID = int(CHANNEL_ID) if CHANNEL_ID else None
 
 print(f"Starting bot with GROUP_ID: {GROUP_ID}, CHANNEL_ID: {CHANNEL_ID}")
+print(f"Data directory: {DATA_DIR}")
+print(f"Database path: {DATABASE_PATH}")
 
 # ================= VK INIT =================
 try:
@@ -64,8 +74,13 @@ except Exception as e:
     sys.exit(1)
 
 # ================= DB =================
-conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
-cursor = conn.cursor()
+try:
+    conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+    cursor = conn.cursor()
+    print("Database connected successfully")
+except Exception as e:
+    print(f"Database connection error: {e}")
+    sys.exit(1)
 
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS subscribers (
@@ -98,8 +113,8 @@ print("Database initialized")
 # ================= BYBIT =================
 SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
 BASE_URL = 'https://api.bybit.com'
-INTERVAL = '1'  # 1 minute
-CHECK_INTERVAL = 300  # 5 minutes
+INTERVAL = '1'
+CHECK_INTERVAL = 300
 
 # ================= ML MODEL =================
 model = RandomForestClassifier(n_estimators=100, random_state=42)
@@ -179,7 +194,6 @@ def create_chart(signal, df):
     try:
         fig, ax = plt.subplots(figsize=(12, 6))
         
-        # Берем последние 100 свечей для графика
         plot_df = df.tail(100)
         
         ax.plot(plot_df['timestamp'], plot_df['close'], label='Price', color='black', linewidth=1.5)
@@ -199,7 +213,11 @@ def create_chart(signal, df):
         
         plt.tight_layout()
         
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+        # Создаем временную папку для графиков
+        temp_dir = os.path.join(DATA_DIR, "temp")
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png', dir=temp_dir)
         plt.savefig(temp_file.name, dpi=100, bbox_inches='tight')
         plt.close(fig)
         
@@ -285,7 +303,6 @@ def generate_signal(symbol):
         tp2 = entry - (atr * 2.5)
         tp3 = entry - (atr * 4.0)
         
-    # Рассчитываем уверенность на основе индикаторов
     confidence = 65 + (rsi - 30) / 40 * 30 if direction == 'LONG' else 65 + (70 - rsi) / 40 * 30
     confidence = min(max(confidence, 60), 95)
     
@@ -410,6 +427,7 @@ if __name__ == '__main__':
     print("="*50)
     print(f"Group ID: {GROUP_ID}")
     print(f"Channel ID: {CHANNEL_ID}")
+    print(f"Data directory: {DATA_DIR}")
     print(f"Database: {DATABASE_PATH}")
     print("="*50)
     
